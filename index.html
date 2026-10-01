@@ -9798,8 +9798,15 @@ function buildFrontSvg(res, inp){
     let facade = allBraces.filter(b=>{
       const f=(b.face||'').toLowerCase();
       const t=(b.type||'').toLowerCase();
-      return f==='front' || f==='back' || f==='rear' || t.includes('facade');
+      return f==='front' || t.includes('facade_front');
     });
+    // fallback: if no front-specific marker, take any facade but filter front
+    if(!facade.length){
+      facade = allBraces.filter(b=>{ const f=(b.face||'').toLowerCase(); const tt=(b.type||'').toLowerCase(); return (f==='front') || tt.includes('facade'); });
+      // if still mixed rear, keep only front
+      const hasFront = facade.some(b=>(b.face||'').toLowerCase()==='front');
+      if(hasFront) facade = facade.filter(b=>(b.face||'').toLowerCase()==='front');
+    }
     // if engine only emitted front (legacy), facade will still contain front; rear mirroring handled below via geo.nodes fallback
     if(facade.length){
       facade.forEach(br=>{
@@ -9861,25 +9868,7 @@ function buildFrontSvg(res, inp){
             if(pid && !wPart(svg,proj,pid,nx1,ny1,nx2,ny2,'brace',0.2)) wLine(svg,proj,nx1,ny1,nx2,ny2,'brace',0.32);
             else if(!pid) wLine(svg,proj,nx1,ny1,nx2,ny2,'brace',0.32);
           }
-          // rear face (mirrored y = width)
-          if(geo && geo.nodes){
-            let bw = (bays[bi] && bays[bi].width) || Math.max(...bays.map(b=>b.width));
-            const n1r=geo.nodes.find(n=> Math.abs(n.x-fx1)<1e-3 && Math.abs(n.y-bw)<1e-3 && Math.abs(n.z-z1)<1e-3);
-            const n2r=geo.nodes.find(n=> Math.abs(n.x-fx2)<1e-3 && Math.abs(n.y-bw)<1e-3 && Math.abs(n.z-z2)<1e-3);
-            if(n1r && n2r){
-              const rx1=n1r.x, ry1=n1r.z, rx2=n2r.x, ry2=n2r.z;
-              const L=Math.hypot(rx2-rx1, ry2-ry1);
-              const pid=partPick('tube_', L);
-              if(pid && !wPart(svg,proj,pid,rx1,ry1,rx2,ry2,'brace',0.2)) wLine(svg,proj,rx1,ry1,rx2,ry2,'brace',0.32);
-              else if(!pid) wLine(svg,proj,rx1,ry1,rx2,ry2,'brace',0.32);
-            }
-          } else {
-            // no geo.nodes, draw same X projection for rear (overlays front)
-            const L=Math.hypot(nx2-nx1, ny2-ny1);
-            const pid=partPick('tube_', L);
-            if(pid && !wPart(svg,proj,pid,nx1,ny1,nx2,ny2,'brace',0.2)) wLine(svg,proj,nx1,ny1,nx2,ny2,'brace',0.32);
-            else if(!pid) wLine(svg,proj,nx1,ny1,nx2,ny2,'brace',0.32);
-          }
+
         }
       }
     }
