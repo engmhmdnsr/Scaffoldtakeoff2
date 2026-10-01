@@ -4899,7 +4899,7 @@ function buildBracingEngine(geo, baysInput, sysDef = null, guardExt = 1.0) {
     for (let l = 1; l < geo.levels.length; l++) {
       const z1 = geo.levels[l - 1].elev;
       const z2 = geo.levels[l].elev;
-      const useFwd = ((l + bi) % 2 === 1);
+      const useFwd = (l % 2 === 1); // image_646360: all braced bays same direction per lift (B1 and B4 both forward on lift1)
       const sx = useFwd ? x1 : x2;
       const ex = useFwd ? x2 : x1;
       const n1 = geo.nodes.find(n => Math.abs(n.x - sx) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - z1) < 1e-3);
