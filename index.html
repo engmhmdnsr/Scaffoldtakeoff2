@@ -4790,16 +4790,28 @@ function buildBracingEngine(geo, baysInput, sysDef = null, guardExt = 1.0) {
   };
 
   // 1. Transverse Diagonal Braces - zig-zag alternating per lift, 35-55 candidate span
+  // For grid/birdcage wide scaffolds, repeat across width every 3rd line (M1 fix)
   if (geo.frontPosts.length > 0 && geo.backPosts.length > 0) {
     const lineIndices = [0, geo.frontPosts.length - 1];
     for (let i = 0; i < geo.frontPosts.length; i++) {
       if (i % 3 === 0 && !lineIndices.includes(i)) lineIndices.push(i);
     }
     lineIndices.sort((a, b) => a - b);
+    // width intervals for transverse replication (M1)
+    const yIntervals = (geo.grid && geo.ys.length > 2) ? (()=>{ const idx=[1, geo.ys.length-1]; for(let j=1;j<geo.ys.length-1;j++) if(j%3===1 && !idx.includes(j)) idx.push(j); idx.sort((a,b)=>a-b); return idx.map(k=>geo.ys[k]); })() : [geo.grid ? geo.ys[geo.ys.length-1] : (baysInput[0]?.w ?? 1.2)];
     lineIndices.forEach(li => {
       if (li >= geo.frontPosts.length) return;
       const fp = geo.frontPosts[li];
-      const bp = bpAt(fp.x);
+      // yIntervals loop
+      yIntervals.forEach(yTarget=>{
+      const c = geo.backPosts.filter(p=> Math.abs(p.x-fp.x)<1e-4 && Math.abs(p.y-yTarget)<1e-3);
+      const bp = c.length ? c[0] : (()=>{
+        const cand=geo.backPosts.filter(p=> Math.abs(p.x-fp.x)<1e-4);
+        if(!cand.length) return geo.backPosts[0];
+        let best=cand[0], bd=Math.abs(best.y-yTarget);
+        for(const p of cand){ const d=Math.abs(p.y-yTarget); if(d<bd){bd=d; best=p;}}
+        return best;
+      })();
       if (!bp) return;
       for (let l = 1; l < geo.levels.length; l++) {
         const z1 = geo.levels[l - 1].elev;
@@ -4852,6 +4864,7 @@ function buildBracingEngine(geo, baysInput, sysDef = null, guardExt = 1.0) {
           if (n1 && n2) addBrace('transverse_diagonal', n1, n2, 'transverse', li + 1, l);
         }
       }
+      }); // yIntervals
     });
   }
 
@@ -9790,7 +9803,8 @@ function buildFrontSvg(res, inp){
       });
       // if only front faces present, draw mirrored rear by looking up rear nodes at same x/z but y = bay width
       const hasRear = facade.some(b=>{ const f=(b.face||'').toLowerCase(); return f==='back' || f==='rear'; });
-      if(!hasRear && geo && geo.nodes){
+      // rear mirror removed — front elevation draws front only; rear was coincident overdraw (audit B#1)
+      if(false && hasRear && geo && geo.nodes){ // disabled
         const frontOnly = facade.filter(b=> (b.face||'').toLowerCase()==='front');
         frontOnly.forEach(br=>{
           const s = br.startNode || geo.nodes.find(n=> n.id===br.startNodeId);
