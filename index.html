@@ -63,7 +63,12 @@ button{font:inherit}
 
 .logo-row{display:flex;align-items:center;gap:10px}
 
-.logo-mark{width:36px;height:36px;border-radius:10px;background:linear-gradient(102deg,#0D64A4 0%,#12805E 56%,#1F7A50 100%);display:grid;place-items:center;font-weight:800;color:#fff;font-size:15px;letter-spacing:-.02em;box-shadow:0 4px 16px rgba(13,100,164,.25)}
+.logo-mark{width:36px;height:36px;border-radius:8px;overflow:hidden;flex-shrink:0}
+.logo-mark img{width:100%;height:100%;object-fit:contain}
+.logo-mark .logo-dark{display:block}
+.logo-mark .logo-light{display:none}
+html[data-theme="light"] .logo-mark .logo-dark{display:none}
+html[data-theme="light"] .logo-mark .logo-light{display:block}
 
 .logo-txt{line-height:1.1}
 
@@ -629,7 +634,7 @@ html[data-theme="light"] .toast {
   <div class="auth-card">
     <div class="auth-top">
       <div class="logo-row">
-        <div class="logo-mark">OS</div>
+        <div class="logo-mark"><img class="logo-dark" src="logo-oversight-dark.png" alt="Oversight"><img class="logo-light" src="logo-oversight-light.png" alt="Oversight"></div>
         <div class="logo-txt"><b>Oversight</b><span>SCAFFOLD TAKEOFF</span></div>
       </div>
       <button class="theme-toggle" id="theme-toggle-auth" title="Toggle light/dark" aria-label="Toggle theme">
