@@ -987,7 +987,7 @@ button[onclick*="openSupabase"]{display:none !important}
 
                 <div class="form-grid">
 
-                  <div class="field"><label>System</label><select class="select" id="f-system"><option value="cuplock">Cuplock</option><option value="ringlock">Ringlock</option></select></div>
+                  <div class="field"><label>System</label><select class="select" id="f-system"><option value="cuplock">Cuplock</option><option value="tube">Tube and Coupler (EN 39)</option><option value="ringlock">Ringlock</option></select></div>
 
                   <div class="field"><label>Duty</label><select class="select" id="f-duty"><option value="light">Light (1.20 kN/m2)</option><option value="medium">Medium (2.40 kN/m2)</option></select></div>
 
@@ -4899,42 +4899,6 @@ function buildBracingEngine(geo, baysInput, sysDef = null, guardExt = 1.0) {
       if (n1r && n2r) addBrace('facade_diagonal', n1r, n2r, 'rear', bi + 1, l);
     }
   });
-
-  // Guardrail lift braces per facade bay - continuous to top (matches Kotlin guardExt)
-  if (guardExt > 0.05 && geo.levels.length >= 2) {
-    const topElev = geo.levels[geo.levels.length - 1].elev;
-    const guardTop = Math.round((topElev + guardExt) * 100) / 100;
-    const lGuard = geo.levels.length;
-    facadeBayIndices.forEach(bi => {
-      if (bi >= baysInput.length) return;
-      const x1 = geo.xs[bi], x2 = geo.xs[bi + 1];
-      const rearY = geo.grid ? geo.ys[geo.ys.length - 1] : baysInput[bi].w;
-      const useFwd = ((lGuard + bi) % 2 === 1);
-      const sx = useFwd ? x1 : x2;
-      const ex = useFwd ? x2 : x1;
-      const n1 = geo.nodes.find(n => Math.abs(n.x - sx) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - topElev) < 1e-3);
-      let n2 = geo.nodes.find(n => Math.abs(n.x - ex) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - guardTop) < 1e-3);
-      if (!n2) n2 = { id: `VG_${bi}_${ex}`, x: Math.round(ex*1000)/1000, y: 0, z: guardTop };
-      if (n1 && n2) addBrace('facade_diagonal_guard', n1, n2, 'front', bi + 1, lGuard);
-      const sxR = !useFwd ? x1 : x2;
-      const exR = !useFwd ? x2 : x1;
-      const n1r = geo.nodes.find(n => Math.abs(n.x - sxR) < 1e-3 && Math.abs(n.y - rearY) < 1e-3 && Math.abs(n.z - topElev) < 1e-3);
-      let n2r = geo.nodes.find(n => Math.abs(n.x - exR) < 1e-3 && Math.abs(n.y - rearY) < 1e-3 && Math.abs(n.z - guardTop) < 1e-3);
-      if (!n2r) n2r = { id: `VG_R_${bi}_${exR}`, x: Math.round(exR*1000)/1000, y: rearY, z: guardTop };
-      if (n1r && n2r) addBrace('facade_diagonal_guard', n1r, n2r, 'rear', bi + 1, lGuard);
-    });
-    const z1 = topElev;
-    const z2 = guardTop;
-    for (let li = 0; li < geo.frontPosts.length; li++) {
-      if (li % 3 !== 0 && li !== 0 && li !== geo.frontPosts.length - 1) continue;
-      const fp = geo.frontPosts[li];
-      const bp = geo.backPosts.filter(p => Math.abs(p.x - fp.x) < 1e-4).reduce((a,b)=> b.y > a.y ? b : a, geo.backPosts[0]);
-      if (!bp) continue;
-      const n1 = geo.nodes.find(n => Math.abs(n.x - fp.x) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - z1) < 1e-3);
-      const n2 = geo.nodes.find(n => Math.abs(n.x - bp.x) < 1e-3 && Math.abs(n.y - bp.y) < 1e-3 && Math.abs(n.z - z2) < 1e-3);
-      if (n1 && n2) addBrace('transverse_diagonal_guard', n1, n2, 'transverse', li + 1, lGuard);
-    }
-  }
 
   // 2b. Interior birdcage longitudinal braces - every 3rd line if applicable (grid mode)
   if (geo.grid && geo.ys.length > 2) {
@@ -9764,6 +9728,11 @@ function buildFrontSvg(res, inp){
   // ledgers (horizontal) at each level per bay using PartLibrary
 
   res.levels.forEach((elev,i)=>{ if(i===0) return; for(let b=0;b<xs.length-1;b++){ const L=xs[b+1]-xs[b]; const pid=partPick('ledger_', L); if(pid && !wPart(svg,proj,pid,xs[b],elev,xs[b+1],elev,'ledger',0.2)) wLine(svg,proj,xs[b],elev,xs[b+1],elev,'ledger',0.32); else if(!pid) wLine(svg,proj,xs[b],elev,xs[b+1],elev,'ledger',0.32); } });
+  // kicker lift at ~150mm (baseLiftElev) — CSM II-2 2.8.2 H
+  if(res._geo && res._geo.baseLiftElev!=null){
+    const kElev=res._geo.baseLiftElev;
+    for(let b=0;b<xs.length-1;b++){ const L=xs[b+1]-xs[b]; const pid=partPick('ledger_', L); if(pid && !wPart(svg,proj,pid,xs[b],kElev,xs[b+1],kElev,'ledger',0.2)) wLine(svg,proj,xs[b],kElev,xs[b+1],kElev,'ledger',0.32); else if(!pid) wLine(svg,proj,xs[b],kElev,xs[b+1],kElev,'ledger',0.32); }
+  }
 
   // platforms: toeboard MUST be horizontal rect, guardrails horizontal
 
@@ -10035,6 +10004,10 @@ function buildSideSvg(res,inp){
   // transoms (width direction) one per level on the cut
 
   levels.forEach((elev,i)=>{ if(i===0) return; const pid=partPick('transom_', width); const ok=pid && wPart(svg,proj,pid,0,elev,width,elev,'transom',0.2); if(!ok) wLine(svg,proj,0,elev,width,elev,'transom',0.32); });
+  if(res._geo && res._geo.baseLiftElev!=null){
+    const kElev=res._geo.baseLiftElev;
+    const pid=partPick('transom_', width); const ok=pid && wPart(svg,proj,pid,0,kElev,width,kElev,'transom',0.2); if(!ok) wLine(svg,proj,0,kElev,width,kElev,'transom',0.32);
+  }
 
   // platform, guardrails and toe board across the section width (first installed cell per level in Kotlin - JS approximates single deck at top)
 
