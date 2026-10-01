@@ -740,10 +740,15 @@ button[onclick*="openSupabase"]{display:none !important}
       <button type="submit" class="btn pri" id="btn-submit-forgot" style="width:100%; margin-top:6px; justify-content:center; display:flex;">Send Reset Link</button>
     </form>
 
-    <div class="auth-cfg-box">
-      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px;">
-        <button type="button" class="btn ghost btn-sm" id="btn-toggle-cfg" onclick="toggleCfgDrawer()" style="font-size:11px; padding:4px 8px;">Supabase Config</button>
-        <button type="button" class="btn ghost btn-sm" id="btn-bypass-auth" onclick="bypassAuthDemo()" style="font-size:11px; padding:4px 8px; color:var(--mut);">Offline Demo Mode</button>
+    <div class="auth-cfg-box" style="margin-top:18px; padding-top:14px; border-top:1px solid rgba(255,255,255,.08); text-align:center;">
+      <div style="display:flex; align-items:center; gap:10px; justify-content:center; margin-bottom:10px;">
+        <span style="flex:1; height:1px; background:rgba(255,255,255,.08);"></span>
+        <span style="font-size:10px; letter-spacing:.1em; color:var(--mut); opacity:.7; text-transform:uppercase;">or</span>
+        <span style="flex:1; height:1px; background:rgba(255,255,255,.08);"></span>
+      </div>
+      <div style="display:flex; justify-content:center;">
+        <button type="button" class="btn ghost btn-sm" id="btn-bypass-auth" onclick="bypassAuthDemo()" style="font-size:12px; padding:7px 16px; color:var(--mut); border:1px solid rgba(255,255,255,.1); border-radius:8px;">Continue in Offline Demo Mode</button>
+        <button type="button" class="btn ghost btn-sm" id="btn-toggle-cfg" onclick="toggleCfgDrawer()" style="display:none !important;">Supabase Config</button>
       </div>
       <div id="cfg-drawer" style="display:none; margin-top:12px; background:rgba(0,0,0,.15); padding:10px; border-radius:8px; border:1px solid rgba(255,255,255,.06);">
         <div class="auth-field">
