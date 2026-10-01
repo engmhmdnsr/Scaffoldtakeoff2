@@ -4734,392 +4734,259 @@ function buildGroundBearingEngine(loadModel, groundDef, allowableGroundKpa, sole
 
 /* Module 7: Bracing Engine (Section 10 & 11) */
 
-function buildBracingEngine(geo, baysInput, sysDef = null) {
+function buildBracingEngine(geo, baysInput, sysDef = null, guardExt = 1.0) {
 
   const braces = [];
 
   let braceCounter = 0;
 
-  
-
   function addBrace(type, startNode, endNode, face, bayIdx, levelIdx, role = 'bracing') {
 
     braceCounter++;
-
     const dx = endNode.x - startNode.x;
-
     const dy = endNode.y - startNode.y;
-
     const dz = endNode.z - startNode.z;
-
     const rawLen = Math.sqrt(dx * dx + dy * dy + dz * dz);
-
     const length = Math.round(rawLen * 1000) / 1000;
-
     const horizDist = Math.sqrt(dx * dx + dy * dy);
-
     const vertDist = Math.abs(dz);
-
     const angleDeg = horizDist > 0 ? Math.round((Math.atan2(vertDist, horizDist) * 180 / Math.PI) * 10) / 10 : 90.0;
-
     const isCompliant = (angleDeg >= BRACING_RULES.transverse.minAngleDeg && angleDeg <= BRACING_RULES.transverse.maxAngleDeg);
-
     const isBracingVerified = sysDef && (sysDef.verificationStatus === 'VERIFIED') && !sysDef.generic;
-
-    
-
     const brace = {
-
       id: `BR_${braceCounter}`,
-
       type,
-
       startNodeId: startNode.id,
-
       endNodeId: endNode.id,
-
       startNode,
-
       endNode,
-
       face,
-
       bayIdx,
-
       levelIdx,
-
       rawLength: rawLen,
-
       displayLength: length,
-
       length,
-
       horizDist: Math.round(horizDist * 1000) / 1000,
-
       vertDist: Math.round(vertDist * 1000) / 1000,
-
       angleDeg,
-
       connectionStart: 'Swivel Coupler / Wedge Head',
-
       connectionEnd: 'Swivel Coupler / Wedge Head',
-
       ruleId: 'CSM-BRACE-ANGLE',
-
       status: !isCompliant ? 'WARNING' : (isBracingVerified ? 'PASS' : 'ASSUMPTION')
-
     };
-
     braces.push(brace);
-
     return brace;
-
   }
-
-  
-
-  // 1. Transverse Diagonal Braces (End lines + every 3rd post line max 10m)
-
-  // Grid mode spans the FULL width (farthest post line); legacy spans the bay width.
 
   const bpAt = (x) => {
-
     const c = geo.backPosts.filter(p => Math.abs(p.x - x) < 1e-4);
-
     if (!c.length) return geo.backPosts[0];
-
     if (geo.grid) return c.reduce((a, b) => (b.y > a.y ? b : a));
-
     return c[0];
-
   };
 
+  // 1. Transverse Diagonal Braces - zig-zag alternating per lift, 35-55 candidate span
   if (geo.frontPosts.length > 0 && geo.backPosts.length > 0) {
-
     const lineIndices = [0, geo.frontPosts.length - 1];
-
     for (let i = 0; i < geo.frontPosts.length; i++) {
-
       if (i % 3 === 0 && !lineIndices.includes(i)) lineIndices.push(i);
-
     }
-
     lineIndices.sort((a, b) => a - b);
-
-    
-
     lineIndices.forEach(li => {
-
       if (li >= geo.frontPosts.length) return;
-
       const fp = geo.frontPosts[li];
-
       const bp = bpAt(fp.x);
-
       if (!bp) return;
-
-      
-
       for (let l = 1; l < geo.levels.length; l++) {
-
         const z1 = geo.levels[l - 1].elev;
-
         const z2 = geo.levels[l].elev;
-
         const dz = Math.abs(z2 - z1);
-
-        
-
         const candidates = [];
-
-        
-
-        // Candidate 0: Span 0 bays in X (direct transverse plane across width)
-
         {
-
           const horiz = bp.y;
-
           const ang = horiz > 0 ? Math.round((Math.atan2(dz, horiz) * 180 / Math.PI) * 10) / 10 : 90.0;
-
           candidates.push({ span: 0, sx: fp.x, sy: 0, sz: z1, ex: bp.x, ey: bp.y, ez: z2, angle: ang });
-
         }
-
-        
-
-        // Candidate 1: Span 1 bay in X (diagonal across 1 bay and transverse width)
-
         {
-
           const target_li = (li + 1 < geo.frontPosts.length && li === 0) ? (li + 1) : (li > 0 ? li - 1 : (li + 1 < geo.frontPosts.length ? li + 1 : -1));
-
           if (target_li >= 0 && target_li < geo.frontPosts.length) {
-
             const tfp = geo.frontPosts[target_li];
-
             const tbp = geo.grid ? bpAt(tfp.x) : (geo.backPosts.find(p => Math.abs(p.x - tfp.x) < 1e-4) || tfp);
-
             const dx = tfp.x - fp.x;
-
             const dy = tbp.y;
-
             const horiz = Math.sqrt(dx * dx + dy * dy);
-
             const ang = horiz > 0 ? Math.round((Math.atan2(dz, horiz) * 180 / Math.PI) * 10) / 10 : 90.0;
-
             candidates.push({ span: 1, sx: fp.x, sy: 0, sz: z1, ex: tbp.x, ey: tbp.y, ez: z2, angle: ang });
-
           }
-
         }
-
-        
-
-        // Candidate 2: Span 2 bays in X
-
         {
-
           const target_li = (li + 2 < geo.frontPosts.length && li === 0) ? (li + 2) : (li >= 2 ? li - 2 : (li + 2 < geo.frontPosts.length ? li + 2 : -1));
-
           if (target_li >= 0 && target_li < geo.frontPosts.length) {
-
             const tfp = geo.frontPosts[target_li];
-
             const tbp = geo.grid ? bpAt(tfp.x) : (geo.backPosts.find(p => Math.abs(p.x - tfp.x) < 1e-4) || tfp);
-
             const dx = tfp.x - fp.x;
-
             const dy = tbp.y;
-
             const horiz = Math.sqrt(dx * dx + dy * dy);
-
             const ang = horiz > 0 ? Math.round((Math.atan2(dz, horiz) * 180 / Math.PI) * 10) / 10 : 90.0;
-
             candidates.push({ span: 2, sx: fp.x, sy: 0, sz: z1, ex: tbp.x, ey: tbp.y, ez: z2, angle: ang });
-
           }
-
         }
-
-        
-
+        if (!candidates.length) return;
         let selected = candidates.find(c => c.angle >= 35.0 && c.angle <= 55.0);
-
         if (!selected) {
-
           selected = candidates.reduce((best, curr) => {
-
             const distBest = best.angle < 35.0 ? (35.0 - best.angle) : (best.angle > 55.0 ? best.angle - 55.0 : 0);
-
             const distCurr = curr.angle < 35.0 ? (35.0 - curr.angle) : (curr.angle > 55.0 ? curr.angle - 55.0 : 0);
-
             return distCurr < distBest ? curr : best;
-
           }, candidates[0]);
-
         }
-
-        
-
         if (selected) {
-
-          const n1 = geo.nodes.find(n => Math.abs(n.x - selected.sx) < 1e-3 && Math.abs(n.y - selected.sy) < 1e-3 && Math.abs(n.z - selected.sz) < 1e-3);
-
-          const n2 = geo.nodes.find(n => Math.abs(n.x - selected.ex) < 1e-3 && Math.abs(n.y - selected.ey) < 1e-3 && Math.abs(n.z - selected.ez) < 1e-3);
-
-          if (n1 && n2) {
-
-            addBrace('transverse_diagonal', n1, n2, 'transverse', li + 1, l);
-
-          }
-
+          let sx = selected.sx, sy = selected.sy, ex = selected.ex, ey = selected.ey;
+          if (l % 2 === 0) { const tsx = sx, tsy = sy; sx = ex; sy = ey; ex = tsx; ey = tsy; }
+          const n1 = geo.nodes.find(n => Math.abs(n.x - sx) < 1e-3 && Math.abs(n.y - sy) < 1e-3 && Math.abs(n.z - selected.sz) < 1e-3);
+          const n2 = geo.nodes.find(n => Math.abs(n.x - ex) < 1e-3 && Math.abs(n.y - ey) < 1e-3 && Math.abs(n.z - selected.ez) < 1e-3);
+          if (n1 && n2) addBrace('transverse_diagonal', n1, n2, 'transverse', li + 1, l);
         }
-
       }
-
     });
-
   }
 
-  
-
-  // 2. Longitudinal Facade Diagonal Braces (End bays + every 3rd bay max 4m height)
-
-  const facadeBayIndices = [0];
-
-  if (baysInput.length > 1 && !facadeBayIndices.includes(baysInput.length - 1)) {
-
-    facadeBayIndices.push(baysInput.length - 1);
-
+  // 2. Longitudinal facade diagonal braces - BOTH front and rear faces opposite directions
+  // Spacing: tube every 5th post, system every 3rd bay / 10m
+  const isTube = sysDef && sysDef.system === 'tube';
+  const facadeStep = isTube ? 5 : 3;
+  const facadeBayIndices = [];
+  for (let i = 0; i < baysInput.length; i++) { if (i % facadeStep === 0) facadeBayIndices.push(i); }
+  if (baysInput.length > 0 && !facadeBayIndices.includes(0)) facadeBayIndices.push(0);
+  if (baysInput.length > 1 && !facadeBayIndices.includes(baysInput.length - 1)) facadeBayIndices.push(baysInput.length - 1);
+  if (!isTube) {
+    const totalLen = geo.xs[geo.xs.length - 1] || 0;
+    if (totalLen > 10.0) {
+      let acc = 0, lastAdded = -10;
+      for (let i = 0; i < baysInput.length; i++) {
+        const blen = baysInput[i].l ?? 0;
+        acc += blen;
+        if (acc - lastAdded >= 10.0 - 1e-6) {
+          if (!facadeBayIndices.includes(i)) facadeBayIndices.push(i);
+          lastAdded = acc;
+        }
+      }
+    }
   }
-
-  for (let i = 0; i < baysInput.length; i++) {
-
-    if (i % 3 === 0 && !facadeBayIndices.includes(i)) facadeBayIndices.push(i);
-
-  }
-
-  facadeBayIndices.sort((a, b) => a - b);
-
-  
+  facadeBayIndices.sort((a,b)=>a-b);
 
   facadeBayIndices.forEach(bi => {
-
     if (bi >= baysInput.length) return;
-
     const x1 = geo.xs[bi], x2 = geo.xs[bi + 1];
-
-    
-
+    const rearY = geo.grid ? geo.ys[geo.ys.length - 1] : baysInput[bi].w;
     for (let l = 1; l < geo.levels.length; l++) {
-
       const z1 = geo.levels[l - 1].elev;
-
       const z2 = geo.levels[l].elev;
-
-      
-
-      const n1 = (l % 2 === 1)
-
-        ? geo.nodes.find(n => Math.abs(n.x - x1) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - z1) < 1e-3)
-
-        : geo.nodes.find(n => Math.abs(n.x - x2) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - z1) < 1e-3);
-
-      const n2 = (l % 2 === 1)
-
-        ? geo.nodes.find(n => Math.abs(n.x - x2) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - z2) < 1e-3)
-
-        : geo.nodes.find(n => Math.abs(n.x - x1) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - z2) < 1e-3);
-
-      
-
-      if (n1 && n2) {
-
-        addBrace('facade_diagonal', n1, n2, 'front', bi + 1, l);
-
-      }
-
+      const useFwd = ((l + bi) % 2 === 1);
+      const sx = useFwd ? x1 : x2;
+      const ex = useFwd ? x2 : x1;
+      const n1 = geo.nodes.find(n => Math.abs(n.x - sx) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - z1) < 1e-3);
+      const n2 = geo.nodes.find(n => Math.abs(n.x - ex) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - z2) < 1e-3);
+      if (n1 && n2) addBrace('facade_diagonal', n1, n2, 'front', bi + 1, l);
+      const sxR = !useFwd ? x1 : x2;
+      const exR = !useFwd ? x2 : x1;
+      const n1r = geo.nodes.find(n => Math.abs(n.x - sxR) < 1e-3 && Math.abs(n.y - rearY) < 1e-3 && Math.abs(n.z - z1) < 1e-3);
+      const n2r = geo.nodes.find(n => Math.abs(n.x - exR) < 1e-3 && Math.abs(n.y - rearY) < 1e-3 && Math.abs(n.z - z2) < 1e-3);
+      if (n1r && n2r) addBrace('facade_diagonal', n1r, n2r, 'rear', bi + 1, l);
     }
-
   });
 
-  
-
-  // 3. Plan Braces (Base, Top, and intermediate every 3rd lift)
-
-  const planBraceLevels = [0, geo.lifts];
-
-  for (let l = 3; l < geo.lifts; l += 3) {
-
-    if (!planBraceLevels.includes(l)) planBraceLevels.push(l);
-
+  // Guardrail lift braces per facade bay - continuous to top (matches Kotlin guardExt)
+  if (guardExt > 0.05 && geo.levels.length >= 2) {
+    const topElev = geo.levels[geo.levels.length - 1].elev;
+    const guardTop = Math.round((topElev + guardExt) * 100) / 100;
+    const lGuard = geo.levels.length;
+    facadeBayIndices.forEach(bi => {
+      if (bi >= baysInput.length) return;
+      const x1 = geo.xs[bi], x2 = geo.xs[bi + 1];
+      const rearY = geo.grid ? geo.ys[geo.ys.length - 1] : baysInput[bi].w;
+      const useFwd = ((lGuard + bi) % 2 === 1);
+      const sx = useFwd ? x1 : x2;
+      const ex = useFwd ? x2 : x1;
+      const n1 = geo.nodes.find(n => Math.abs(n.x - sx) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - topElev) < 1e-3);
+      let n2 = geo.nodes.find(n => Math.abs(n.x - ex) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - guardTop) < 1e-3);
+      if (!n2) n2 = { id: `VG_${bi}_${ex}`, x: Math.round(ex*1000)/1000, y: 0, z: guardTop };
+      if (n1 && n2) addBrace('facade_diagonal_guard', n1, n2, 'front', bi + 1, lGuard);
+      const sxR = !useFwd ? x1 : x2;
+      const exR = !useFwd ? x2 : x1;
+      const n1r = geo.nodes.find(n => Math.abs(n.x - sxR) < 1e-3 && Math.abs(n.y - rearY) < 1e-3 && Math.abs(n.z - topElev) < 1e-3);
+      let n2r = geo.nodes.find(n => Math.abs(n.x - exR) < 1e-3 && Math.abs(n.y - rearY) < 1e-3 && Math.abs(n.z - guardTop) < 1e-3);
+      if (!n2r) n2r = { id: `VG_R_${bi}_${exR}`, x: Math.round(exR*1000)/1000, y: rearY, z: guardTop };
+      if (n1r && n2r) addBrace('facade_diagonal_guard', n1r, n2r, 'rear', bi + 1, lGuard);
+    });
+    const z1 = topElev;
+    const z2 = guardTop;
+    for (let li = 0; li < geo.frontPosts.length; li++) {
+      if (li % 3 !== 0 && li !== 0 && li !== geo.frontPosts.length - 1) continue;
+      const fp = geo.frontPosts[li];
+      const bp = geo.backPosts.filter(p => Math.abs(p.x - fp.x) < 1e-4).reduce((a,b)=> b.y > a.y ? b : a, geo.backPosts[0]);
+      if (!bp) continue;
+      const n1 = geo.nodes.find(n => Math.abs(n.x - fp.x) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - z1) < 1e-3);
+      const n2 = geo.nodes.find(n => Math.abs(n.x - bp.x) < 1e-3 && Math.abs(n.y - bp.y) < 1e-3 && Math.abs(n.z - z2) < 1e-3);
+      if (n1 && n2) addBrace('transverse_diagonal_guard', n1, n2, 'transverse', li + 1, lGuard);
+    }
   }
 
-  
-
-  const planBraces = [];
-
-  planBraceLevels.forEach(lIdx => {
-
-    if (lIdx < geo.levels.length) {
-
-      const elev = geo.levels[lIdx].elev;
-
-      baysInput.forEach((b, bIdx) => {
-
-        if (bIdx % 2 === 0) {
-
-          const x1 = geo.xs[bIdx], x2 = geo.xs[bIdx + 1], y = b.w;
-
-          const n1 = geo.nodes.find(n => Math.abs(n.x - x1) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - elev) < 1e-3);
-
-          const n2 = geo.nodes.find(n => Math.abs(n.x - x2) < 1e-3 && Math.abs(n.y - y) < 1e-3 && Math.abs(n.z - elev) < 1e-3);
-
-          if (n1 && n2) {
-
-            const pdx = n2.x - n1.x, pdy = n2.y - n1.y, pdz = n2.z - n1.z;
-
-            planBraces.push({
-
-              id: `PBR_${planBraces.length + 1}`,
-
-              levelIdx: lIdx,
-
-              bayIdx: bIdx + 1,
-
-              startNodeId: n1.id,
-
-              endNodeId: n2.id,
-
-              length: Math.round(Math.sqrt(pdx * pdx + pdy * pdy + pdz * pdz) * 1000) / 1000,
-
-              angleDeg: 0,
-
-              elev
-
-            });
-
-          }
-
+  // 2b. Interior birdcage longitudinal braces - every 3rd line if applicable (grid mode)
+  if (geo.grid && geo.ys.length > 2) {
+    for (let j = 1; j < geo.ys.length - 1; j++) {
+      if (j % 3 !== 1) continue;
+      const y = geo.ys[j];
+      for (let bi = 0; bi < baysInput.length; bi++) {
+        const x1 = geo.xs[bi], x2 = geo.xs[bi + 1];
+        for (let l = 1; l < geo.levels.length; l++) {
+          const z1 = geo.levels[l - 1].elev, z2 = geo.levels[l].elev;
+          const useFwd = ((l + bi + j) % 2 === 1);
+          const sx = useFwd ? x1 : x2, ex = useFwd ? x2 : x1;
+          const n1 = geo.nodes.find(n => Math.abs(n.x - sx) < 1e-3 && Math.abs(n.y - y) < 1e-3 && Math.abs(n.z - z1) < 1e-3);
+          const n2 = geo.nodes.find(n => Math.abs(n.x - ex) < 1e-3 && Math.abs(n.y - y) < 1e-3 && Math.abs(n.z - z2) < 1e-3);
+          if (n1 && n2) addBrace('facade_diagonal', n1, n2, 'interior', bi + 1, l);
         }
-
-      });
-
+      }
     }
+  }
 
+  // 3. Plan Braces (Base, Top, and intermediate every 3rd lift)
+  const planBraceLevels = [0, geo.lifts];
+  for (let l = 3; l < geo.lifts; l += 3) {
+    if (!planBraceLevels.includes(l)) planBraceLevels.push(l);
+  }
+  const planBraces = [];
+  planBraceLevels.forEach(lIdx => {
+    if (lIdx < geo.levels.length) {
+      const elev = geo.levels[lIdx].elev;
+      baysInput.forEach((b, bIdx) => {
+        if (bIdx % 2 === 0) {
+          const x1 = geo.xs[bIdx], x2 = geo.xs[bIdx + 1], y = b.w;
+          const n1 = geo.nodes.find(n => Math.abs(n.x - x1) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - elev) < 1e-3);
+          const n2 = geo.nodes.find(n => Math.abs(n.x - x2) < 1e-3 && Math.abs(n.y - y) < 1e-3 && Math.abs(n.z - elev) < 1e-3);
+          if (n1 && n2) {
+            const pdx = n2.x - n1.x, pdy = n2.y - n1.y, pdz = n2.z - n1.z;
+            planBraces.push({
+              id: `PBR_${planBraces.length + 1}`,
+              levelIdx: lIdx,
+              bayIdx: bIdx + 1,
+              startNodeId: n1.id,
+              endNodeId: n2.id,
+              length: Math.round(Math.sqrt(pdx * pdx + pdy * pdy + pdz * pdz) * 1000) / 1000,
+              angleDeg: 0,
+              elev
+            });
+          }
+        }
+      });
+    }
   });
 
-  
-
   return {
-
     braces,
-
     planBraces
-
   };
-
 }
 
 
@@ -8940,7 +8807,7 @@ function calculate(inp){
     }
   const platModel = buildPlatformModel(geo, baysInput, plankedIn, workIn, PT, acc, access, bside, activeDutyProfile, offset);
 
-  const bracing = buildBracingEngine(geo, baysInput, S);
+  const bracing = buildBracingEngine(geo, baysInput, S, guardExt);
 
   const postIdByNodeId={};
 
@@ -9919,26 +9786,99 @@ function buildFrontSvg(res, inp){
 
   res.levels.forEach(elev=>{ xs.forEach(x=>{ wDot(svg,proj,x,elev,'transom',0.75,false); const p=proj.p(x,elev); svg.appendChild(svgEl('rect',{class:'coupler',x:fmt(p.x-0.9,2),y:fmt(p.y-0.9,2),width:'1.8',height:'1.8',fill:'none','stroke-width':0.25})); }); });
 
-  // braces diagonals alternating per bay via tube parts
-
-  for(let li=1; li<res.levels.length; li++){
-
-    const y1=res.levels[li-1], y2=res.levels[li];
-
-    for(let b=0;b<xs.length-1;b++){
-
-      const x1=(li+b)%2===0?xs[b]:xs[b+1], x2=(li+b)%2===0?xs[b+1]:xs[b];
-
-      const L=Math.hypot(x2-x1,y2-y1);
-
-      const pid=partPick('tube_', L);
-
-      if(pid && !wPart(svg,proj,pid,x1,y1,x2,y2,'brace',0.2)) ((li+b)%2===0? wLine(svg,proj,xs[b],y1,xs[b+1],y2,'brace',0.32) : wLine(svg,proj,xs[b+1],y1,xs[b],y2,'brace',0.32));
-
-      else if(!pid) ((li+b)%2===0? wLine(svg,proj,xs[b],y1,xs[b+1],y2,'brace',0.32) : wLine(svg,proj,xs[b+1],y1,xs[b],y2,'brace',0.32));
-
+  // facade braces: both front AND rear faces from engine (bracing.braces filtered by face), zig-zag per lift using actual brace nodes / geo.nodes
+  {
+    const geo = res._geo;
+    const bracing = res._bracing;
+    const allBraces = (bracing && Array.isArray(bracing.braces)) ? bracing.braces : [];
+    let facade = allBraces.filter(b=>{
+      const f=(b.face||'').toLowerCase();
+      const t=(b.type||'').toLowerCase();
+      return f==='front' || f==='back' || f==='rear' || t.includes('facade');
+    });
+    // if engine only emitted front (legacy), facade will still contain front; rear mirroring handled below via geo.nodes fallback
+    if(facade.length){
+      facade.forEach(br=>{
+        const s = br.startNode || (geo && geo.nodes ? geo.nodes.find(n=> n.id===br.startNodeId) : null);
+        const e = br.endNode || (geo && geo.nodes ? geo.nodes.find(n=> n.id===br.endNodeId) : null);
+        if(!s || !e) return;
+        const x1=s.x, y1=s.z, x2=e.x, y2=e.z;
+        const L=Math.hypot(x2-x1,y2-y1);
+        const pid=partPick('tube_', L);
+        if(pid && !wPart(svg,proj,pid,x1,y1,x2,y2,'brace',0.2)) wLine(svg,proj,x1,y1,x2,y2,'brace',0.32);
+        else if(!pid) wLine(svg,proj,x1,y1,x2,y2,'brace',0.32);
+      });
+      // if only front faces present, draw mirrored rear by looking up rear nodes at same x/z but y = bay width
+      const hasRear = facade.some(b=>{ const f=(b.face||'').toLowerCase(); return f==='back' || f==='rear'; });
+      if(!hasRear && geo && geo.nodes){
+        const frontOnly = facade.filter(b=> (b.face||'').toLowerCase()==='front');
+        frontOnly.forEach(br=>{
+          const s = br.startNode || geo.nodes.find(n=> n.id===br.startNodeId);
+          const e = br.endNode || geo.nodes.find(n=> n.id===br.endNodeId);
+          if(!s||!e) return;
+          const bayIdx = (br.bayIdx!=null ? br.bayIdx-1 : inp.bays.findIndex((_,i)=> Math.abs(xs[i]-s.x)<1e-3 || Math.abs(xs[i+1]-s.x)<1e-3));
+          let bw = null;
+          if(bayIdx>=0 && inp.bays[bayIdx]) bw = inp.bays[bayIdx].width;
+          else bw = Math.max(...inp.bays.map(b=>b.width));
+          const n1r = geo.nodes.find(n=> Math.abs(n.x-s.x)<1e-3 && Math.abs(n.y-bw)<1e-3 && Math.abs(n.z-s.z)<1e-3);
+          const n2r = geo.nodes.find(n=> Math.abs(n.x-e.x)<1e-3 && Math.abs(n.y-bw)<1e-3 && Math.abs(n.z-e.z)<1e-3);
+          if(n1r && n2r){
+            const x1=n1r.x, y1=n1r.z, x2=n2r.x, y2=n2r.z;
+            const L=Math.hypot(x2-x1,y2-y1);
+            const pid=partPick('tube_', L);
+            if(pid && !wPart(svg,proj,pid,x1,y1,x2,y2,'brace',0.2)) wLine(svg,proj,x1,y1,x2,y2,'brace',0.32);
+            else if(!pid) wLine(svg,proj,x1,y1,x2,y2,'brace',0.32);
+          }
+        });
+      }
+    } else {
+      // fallback when bracing missing: iterate braced bays as engine (ends + every 3rd bay) zig-zag using geo.nodes
+      const bays = inp.bays || res.bays || [];
+      const idx=[0];
+      if(bays.length>1 && !idx.includes(bays.length-1)) idx.push(bays.length-1);
+      for(let i=0;i<bays.length;i++) if(i%3===0 && !idx.includes(i)) idx.push(i);
+      idx.sort((a,b)=>a-b);
+      for(const bi of idx){
+        if(bi>=xs.length-1) continue;
+        const xA=xs[bi], xB=xs[bi+1];
+        for(let li=1; li<res.levels.length; li++){
+          const z1=res.levels[li-1], z2=res.levels[li];
+          const fx1=(li%2===1)? xA : xB, fx2=(li%2===1)? xB : xA;
+          let nx1=fx1, ny1=z1, nx2=fx2, ny2=z2;
+          if(geo && geo.nodes){
+            const n1=geo.nodes.find(n=> Math.abs(n.x-fx1)<1e-3 && Math.abs(n.y)<1e-3 && Math.abs(n.z-z1)<1e-3);
+            const n2=geo.nodes.find(n=> Math.abs(n.x-fx2)<1e-3 && Math.abs(n.y)<1e-3 && Math.abs(n.z-z2)<1e-3);
+            if(n1&&n2){ nx1=n1.x; ny1=n1.z; nx2=n2.x; ny2=n2.z; }
+          }
+          // front face
+          {
+            const L=Math.hypot(nx2-nx1, ny2-ny1);
+            const pid=partPick('tube_', L);
+            if(pid && !wPart(svg,proj,pid,nx1,ny1,nx2,ny2,'brace',0.2)) wLine(svg,proj,nx1,ny1,nx2,ny2,'brace',0.32);
+            else if(!pid) wLine(svg,proj,nx1,ny1,nx2,ny2,'brace',0.32);
+          }
+          // rear face (mirrored y = width)
+          if(geo && geo.nodes){
+            let bw = (bays[bi] && bays[bi].width) || Math.max(...bays.map(b=>b.width));
+            const n1r=geo.nodes.find(n=> Math.abs(n.x-fx1)<1e-3 && Math.abs(n.y-bw)<1e-3 && Math.abs(n.z-z1)<1e-3);
+            const n2r=geo.nodes.find(n=> Math.abs(n.x-fx2)<1e-3 && Math.abs(n.y-bw)<1e-3 && Math.abs(n.z-z2)<1e-3);
+            if(n1r && n2r){
+              const rx1=n1r.x, ry1=n1r.z, rx2=n2r.x, ry2=n2r.z;
+              const L=Math.hypot(rx2-rx1, ry2-ry1);
+              const pid=partPick('tube_', L);
+              if(pid && !wPart(svg,proj,pid,rx1,ry1,rx2,ry2,'brace',0.2)) wLine(svg,proj,rx1,ry1,rx2,ry2,'brace',0.32);
+              else if(!pid) wLine(svg,proj,rx1,ry1,rx2,ry2,'brace',0.32);
+            }
+          } else {
+            // no geo.nodes, draw same X projection for rear (overlays front)
+            const L=Math.hypot(nx2-nx1, ny2-ny1);
+            const pid=partPick('tube_', L);
+            if(pid && !wPart(svg,proj,pid,nx1,ny1,nx2,ny2,'brace',0.2)) wLine(svg,proj,nx1,ny1,nx2,ny2,'brace',0.32);
+            else if(!pid) wLine(svg,proj,nx1,ny1,nx2,ny2,'brace',0.32);
+          }
+        }
+      }
     }
-
   }
 
   // ladder verticals via ladder parts
@@ -10125,9 +10065,65 @@ function buildSideSvg(res,inp){
 
   if(true) wRect(svg,proj,0,platElev,width,0.15,'toe',null);
 
-  // transverse braces: one per lift interval on the section (alternating) using tube parts
-
-  for(let li=1; li<levels.length; li++){ const y1=levels[li-1], y2=levels[li]; const x1=li%2===1?0:width, x2=li%2===1?width:0; const L=Math.hypot(width, y2-y1); const pid=partPick('tube_', L); const ok=pid && wPart(svg,proj,pid,x1,y1,x2,y2,'brace',0.2); if(!ok) wLine(svg,proj,x1,y1,x2,y2,'brace',0.32); }
+  // transverse braces: iterate braced lines as engine (ends + every 3rd line) zig-zag alternating using actual brace nodes / geo.nodes
+  {
+    const geo = res._geo;
+    const bracing = res._bracing;
+    const allBraces = (bracing && Array.isArray(bracing.braces)) ? bracing.braces : [];
+    let transverse = allBraces.filter(b=>{
+      const f=(b.face||'').toLowerCase();
+      const t=(b.type||'').toLowerCase();
+      return f==='transverse' || t.includes('transverse');
+    });
+    if(transverse.length){
+      transverse.forEach(br=>{
+        const s = br.startNode || (geo && geo.nodes ? geo.nodes.find(n=> n.id===br.startNodeId) : null);
+        const e = br.endNode || (geo && geo.nodes ? geo.nodes.find(n=> n.id===br.endNodeId) : null);
+        if(!s || !e) return;
+        // section projector uses (y = transverse width, z = elev)
+        const x1=s.y, y1=s.z, x2=e.y, y2=e.z;
+        const L=Math.hypot(x2-x1,y2-y1);
+        const pid=partPick('tube_', L);
+        if(pid && !wPart(svg,proj,pid,x1,y1,x2,y2,'brace',0.2)) wLine(svg,proj,x1,y1,x2,y2,'brace',0.32);
+        else if(!pid) wLine(svg,proj,x1,y1,x2,y2,'brace',0.32);
+      });
+    } else {
+      // fallback: compute braced line indices (ends + every 3rd) and draw zig-zag using geo.nodes
+      const fps = (geo && geo.frontPosts && geo.frontPosts.length) ? geo.frontPosts : (res.xs||[]).map((x,i)=> ({x, y:0}));
+      const nLines = fps.length;
+      if(nLines){
+        const lineIndices=[0];
+        if(nLines>1 && !lineIndices.includes(nLines-1)) lineIndices.push(nLines-1);
+        for(let i=0;i<nLines;i++) if(i%3===0 && !lineIndices.includes(i)) lineIndices.push(i);
+        lineIndices.sort((a,b)=>a-b);
+        lineIndices.forEach(liIdx=>{
+          const fp = fps[liIdx];
+          if(!fp) return;
+          const xAt = fp.x;
+          let bw = width;
+          if(geo && geo.backPosts){
+            const cands=geo.backPosts.filter(p=> Math.abs(p.x-xAt)<1e-4);
+            if(cands.length) bw = cands.reduce((a,b)=> b.y>a.y?b:a).y || width;
+          }
+          for(let li=1; li<levels.length; li++){
+            const z1=levels[li-1], z2=levels[li];
+            const y1t = (li%2===1) ? 0 : bw;
+            const y2t = (li%2===1) ? bw : 0;
+            let nx1=y1t, ny1=z1, nx2=y2t, ny2=z2;
+            if(geo && geo.nodes){
+              const n1=geo.nodes.find(n=> Math.abs(n.x-xAt)<1e-3 && Math.abs(n.y-y1t)<1e-3 && Math.abs(n.z-z1)<1e-3);
+              const n2=geo.nodes.find(n=> Math.abs(n.x-xAt)<1e-3 && Math.abs(n.y-y2t)<1e-3 && Math.abs(n.z-z2)<1e-3);
+              if(n1 && n2){ nx1=n1.y; ny1=n1.z; nx2=n2.y; ny2=n2.z; }
+            }
+            const L=Math.hypot(nx2-nx1, ny2-ny1);
+            const pid=partPick('tube_', L);
+            if(pid && !wPart(svg,proj,pid,nx1,ny1,nx2,ny2,'brace',0.2)) wLine(svg,proj,nx1,ny1,nx2,ny2,'brace',0.32);
+            else if(!pid) wLine(svg,proj,nx1,ny1,nx2,ny2,'brace',0.32);
+          }
+        });
+      }
+    }
+  }
 
   // runner (ledger) ends on the cut: dots + right-angle couplers via wPart coupler_fixed
 
