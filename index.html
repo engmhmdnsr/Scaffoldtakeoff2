@@ -785,7 +785,7 @@ button[onclick*="openSupabase"]{display:none !important}
 
       
 
-      <div class="sb-title">Quantity takeoff and compliance screening for system scaffold</div>
+      <div class="sb-title">Quantity takeoff and compliance screening for tube and system scaffold</div>
 
     </div>
 
@@ -9878,33 +9878,37 @@ function buildFrontSvg(res, inp){
 
   const bayIdx=Math.max(0, Math.min(xs.length-2, 0));
 
-  const ladderX= (inp.access==='external'? xs[bayIdx]-0.325 : xs[bayIdx]+0.425);
-
+  // ladder per lift — split outside/inside (CSM internal staggered)
   const ladderW=0.45;
-
-  const ladderH=top+0.9-base;
-
-  const pidL=partPick('ladder_', ladderH);
-
-  if(pidL && wPart(svg,proj,pidL,ladderX,base,ladderX,top+0.9,'access',0.22)){
-
-    wLine(svg,proj,ladderX-ladderW/2,base,ladderX-ladderW/2,top+0.9,'access',0.2);
-
-    wLine(svg,proj,ladderX+ladderW/2,base,ladderX+ladderW/2,top+0.9,'access',0.2);
-
-  } else {
-
-    wLine(svg,proj,ladderX-ladderW/2,base,ladderX-ladderW/2,top+0.9,'access',0.35);
-
-    wLine(svg,proj,ladderX+ladderW/2,base,ladderX+ladderW/2,top+0.9,'access',0.35);
-
-    { const nRungs=Math.ceil((top+0.9-base)/0.30); for(let r=0;r<=nRungs;r++){ const y=base+r*0.30; if(y>top+0.91) break; wLine(svg,proj,ladderX-ladderW/2,y,ladderX+ladderW/2,y,'access',0.28); } }
-
+  const isExternal = inp.access==='external';
+  // per-lift ladder segments staggered: odd lifts at bay centre, even lifts offset
+  for(let li=1; li<res.levels.length; li++){
+    const y1=res.levels[li-1], y2=res.levels[li];
+    const isTop = li===res.levels.length-1;
+    const yTop = isTop ? y2+0.9 : y2;
+    let ladderX;
+    if(isExternal){
+      ladderX = xs[bayIdx]-0.325;
+    } else {
+      // internal: stagger inside bay — odd lift near left standard, even near right
+      const bayW = xs[bayIdx+1]-xs[bayIdx];
+      ladderX = (li%2===1) ? xs[bayIdx]+0.35 : xs[bayIdx]+bayW-0.35;
+      if(ladderX<xs[bayIdx]+0.25) ladderX=xs[bayIdx]+0.25;
+      if(ladderX>xs[bayIdx+1]-0.25) ladderX=xs[bayIdx+1]-0.25;
+    }
+    const segH=yTop-y1;
+    const pidL=partPick('ladder_', segH);
+    if(pidL && wPart(svg,proj,pidL,ladderX,y1,ladderX,yTop,'access',0.22)){
+      wLine(svg,proj,ladderX-ladderW/2,y1,ladderX-ladderW/2,yTop,'access',0.2);
+      wLine(svg,proj,ladderX+ladderW/2,y1,ladderX+ladderW/2,yTop,'access',0.2);
+    } else {
+      wLine(svg,proj,ladderX-ladderW/2,y1,ladderX-ladderW/2,yTop,'access',0.35);
+      wLine(svg,proj,ladderX+ladderW/2,y1,ladderX+ladderW/2,yTop,'access',0.35);
+      const nRungs=Math.ceil(segH/0.30); for(let r=0;r<=nRungs;r++){ const y=y1+r*0.30; if(y>yTop+1e-6) break; wLine(svg,proj,ladderX-ladderW/2,y,ladderX+ladderW/2,y,'access',0.28); }
+    }
+    // landing at top of segment
+    wLine(svg,proj,ladderX-ladderW/2,y2,ladderX+ladderW/2,y2,'accessLanding',0.4);
   }
-
-  // landings
-
-  res.levels.forEach(elev=>{ if(elev===base) return; wLine(svg,proj,ladderX-ladderW/2,elev,ladderX+ladderW/2,elev,'accessLanding',0.4); });
 
   // sole boards
 
