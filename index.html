@@ -4797,8 +4797,13 @@ function buildBracingEngine(geo, baysInput, sysDef = null, guardExt = 1.0) {
       if (i % 3 === 0 && !lineIndices.includes(i)) lineIndices.push(i);
     }
     lineIndices.sort((a, b) => a - b);
-    // width intervals for transverse replication (M1)
-    const yIntervals = (geo.grid && geo.ys.length > 2) ? (()=>{ const idx=[1, geo.ys.length-1]; for(let j=1;j<geo.ys.length-1;j++) if(j%3===1 && !idx.includes(j)) idx.push(j); idx.sort((a,b)=>a-b); return idx.map(k=>geo.ys[k]); })() : [geo.grid ? geo.ys[geo.ys.length-1] : (baysInput[0]?.w ?? 1.2)];
+    // width intervals for transverse replication (M1) limited to Wmax ~ dz/tan35 to keep angle 35-55 (avoid 18deg for W6)
+    // Wmax = dz / tan(35°); use minDz for global precompute; per-lift segmentation also applied
+    const minDzGlobal = geo.levels.length > 1 ? Math.min(...geo.levels.slice(1).map((lvl,i)=>Math.abs(lvl.elev - geo.levels[i].elev))) : 2.0;
+    const wMaxGlobal = minDzGlobal / Math.tan(35*Math.PI/180);
+    const yIntervalsRaw = (geo.grid && geo.ys.length > 2) ? (()=>{ const idx=[1, geo.ys.length-1]; for(let j=1;j<geo.ys.length-1;j++) if(j%3===1 && !idx.includes(j)) idx.push(j); idx.sort((a,b)=>a-b); return idx.map(k=>geo.ys[k]); })() : [geo.grid ? geo.ys[geo.ys.length-1] : (baysInput[0]?.w ?? 1.2)];
+    // Limit width per brace to Wmax: segment any yTarget > wMax into hops ≤ wMax (snap to grid lines when possible)
+    const yIntervals = (()=>{ const flat=[]; yIntervalsRaw.forEach(yt=>{ if(yt <= wMaxGlobal+1e-6) flat.push(yt); else { const nSeg=Math.ceil(yt/wMaxGlobal); const segW=yt/nSeg; for(let k=1;k<=nSeg;k++){ const raw=k*segW; let best=raw; if(geo.grid && geo.ys.length){ let bd=Infinity; for(const yy of geo.ys){ const d=Math.abs(yy-raw); if(d<bd){bd=d; best=yy;}} } if(!flat.includes(best)) flat.push(best); } } }); return flat.slice().sort((a,b)=>a-b); })();
     lineIndices.forEach(li => {
       if (li >= geo.frontPosts.length) return;
       const fp = geo.frontPosts[li];
@@ -4870,6 +4875,7 @@ function buildBracingEngine(geo, baysInput, sysDef = null, guardExt = 1.0) {
 
   // 2. Longitudinal facade diagonal braces - BOTH front and rear faces opposite directions
   // Spacing: tube every 5th post, system every 3rd bay / 10m
+  // Facade angle search over candidate lifts 1 and 2 (like transverse spans 0/1/2) picking closest to 35-55 — fixes 26.6° (1.2/2.4) to ~45° by spanning 2 lifts when needed
   const isTube = sysDef && sysDef.system === 'tube';
   const facadeStep = isTube ? 5 : 3;
   const facadeBayIndices = [];
@@ -4891,24 +4897,31 @@ function buildBracingEngine(geo, baysInput, sysDef = null, guardExt = 1.0) {
     }
   }
   facadeBayIndices.sort((a,b)=>a-b);
-
+  function outsideDist(a){ return a<35?35-a : a>55?a-55:0; }
   facadeBayIndices.forEach(bi => {
     if (bi >= baysInput.length) return;
     const x1 = geo.xs[bi], x2 = geo.xs[bi + 1];
     const rearY = geo.grid ? geo.ys[geo.ys.length - 1] : baysInput[bi].w;
     for (let l = 1; l < geo.levels.length; l++) {
       const z1 = geo.levels[l - 1].elev;
-      const z2 = geo.levels[l].elev;
+      const horiz = Math.abs(x2 - x1);
+      // candidate lifts 1 and 2: evaluate angle for 1-lift and 2-lift height, pick closest to 35-55
+      const facCands=[];
+      { const zTop=geo.levels[l].elev; const dz=Math.abs(zTop-z1); const ang=horiz>0?Math.round((Math.atan2(dz,horiz)*180/Math.PI)*10)/10:90.0; facCands.push({lifts:1,zTop,dz,angle:ang}); }
+      if(l+1<geo.levels.length){ const zTop2=geo.levels[l+1].elev; const dz2=Math.abs(zTop2-z1); const ang2=horiz>0?Math.round((Math.atan2(dz2,horiz)*180/Math.PI)*10)/10:90.0; facCands.push({lifts:2,zTop:zTop2,dz:dz2,angle:ang2}); }
+      let sel=facCands.find(c=>c.angle>=35&&c.angle<=55);
+      if(!sel){ let best=facCands[0]; facCands.forEach(cur=>{ if(outsideDist(cur.angle)<outsideDist(best.angle)) best=cur; }); sel=best; }
+      const zTopSel=sel.zTop;
       const useFwd = (l % 2 === 1); // image_646360: all braced bays same direction per lift (B1 and B4 both forward on lift1)
       const sx = useFwd ? x1 : x2;
       const ex = useFwd ? x2 : x1;
       const n1 = geo.nodes.find(n => Math.abs(n.x - sx) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - z1) < 1e-3);
-      const n2 = geo.nodes.find(n => Math.abs(n.x - ex) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - z2) < 1e-3);
+      const n2 = geo.nodes.find(n => Math.abs(n.x - ex) < 1e-3 && Math.abs(n.y) < 1e-3 && Math.abs(n.z - zTopSel) < 1e-3);
       if (n1 && n2) addBrace('facade_diagonal', n1, n2, 'front', bi + 1, l);
       const sxR = !useFwd ? x1 : x2;
       const exR = !useFwd ? x2 : x1;
       const n1r = geo.nodes.find(n => Math.abs(n.x - sxR) < 1e-3 && Math.abs(n.y - rearY) < 1e-3 && Math.abs(n.z - z1) < 1e-3);
-      const n2r = geo.nodes.find(n => Math.abs(n.x - exR) < 1e-3 && Math.abs(n.y - rearY) < 1e-3 && Math.abs(n.z - z2) < 1e-3);
+      const n2r = geo.nodes.find(n => Math.abs(n.x - exR) < 1e-3 && Math.abs(n.y - rearY) < 1e-3 && Math.abs(n.z - zTopSel) < 1e-3);
       if (n1r && n2r) addBrace('facade_diagonal', n1r, n2r, 'rear', bi + 1, l);
     }
   });
@@ -6641,6 +6654,10 @@ function ladderFixLenFor(geo, bay) {
 // is an extra rail (1 per edge); otherwise toprail + midrail (2 per edge).
 
 function guardRailsPerEdgeAt(geo, levelIdx) {
+  if (levelIdx < geo.lifts) {
+    const gap = geo.levels[levelIdx + 1].elev - geo.levels[levelIdx].elev;
+    if (gap >= 0.95 && gap <= 1.15) return 1;
+  }
   return 2;
 }
 
